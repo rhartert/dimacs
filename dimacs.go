@@ -21,57 +21,83 @@ type CNFFormula struct {
 	Clauses [][]int
 }
 
-// Builder defines methods to construct a CNF formula from a DIMACS file.
-type Builder interface {
-	// Problem processes the problem line.
-	Problem(nVars int, nClauses int)
-
-	// Clause processes the clause from clause line. Implementations of this
-	// method should consider tmpClause as a shared buffer and only read from it
-	// without retaining it.
-	Clause(tmpClause []int)
-
-	// Comment processes a comment line. Lines passed to this function always
-	// start with the comment prefix "c". This is useful to process additional
-	// information stored in the comments (e.g. problem information, solver
-	// configuration, etc.).
-	Comment(line string)
-}
-
 // Read parses a DIMACS CNF file from the given reader and returns a CNFFormula.
 func Read(r io.Reader) (CNFFormula, error) {
 	builder := cnfBuilder{}
 	if err := ReadBuilder(r, &builder); err != nil {
 		return CNFFormula{}, err
 	}
-	return CNFFormula(builder), nil
+	if builder.cnf == nil {
+		return CNFFormula{}, fmt.Errorf("missing problem line found")
+	}
+	if got, want := len(builder.cnf.Clauses), cap(builder.cnf.Clauses); got < want {
+		return CNFFormula{}, fmt.Errorf("missing clauses: expected %d, got %d", want, got)
+	}
+	return *builder.cnf, nil
 }
 
-// cnfBuilder wraps CNFFormula to implement the Builder interface.
-type cnfBuilder CNFFormula
-
-func (cnf *cnfBuilder) Problem(v int, c int) {
-	cnf.NumVars = v
-	cnf.Clauses = make([][]int, 0, c)
+type cnfBuilder struct {
+	cnf *CNFFormula
 }
 
-func (cnf *cnfBuilder) Clause(tmpClause []int) {
-	c := make([]int, len(tmpClause))
-	copy(c, tmpClause)
-	cnf.Clauses = append(cnf.Clauses, c)
+func (b *cnfBuilder) Problem(p string, v int, c int) error {
+	if b.cnf != nil {
+		return fmt.Errorf("duplicate problem line")
+	}
+	if p != "cnf" {
+		return fmt.Errorf("expected \"cnf\" problem, got %q", p)
+	}
+	if v < 0 {
+		return fmt.Errorf("number of variables must be non-negative, got: %d", v)
+	}
+	if c < 0 {
+		return fmt.Errorf("number of clauses must be non-negative, got: %d", c)
+	}
+	b.cnf = &CNFFormula{
+		NumVars: v,
+		Clauses: make([][]int, 0, c),
+	}
+	return nil
 }
 
-func (cnf *cnfBuilder) Comment(c string) {} // ignore comments
+func (b *cnfBuilder) Clause(tmp []int) error {
+	if b.cnf == nil {
+		return fmt.Errorf("clause found before problem line")
+	}
+	if s := len(b.cnf.Clauses); s == cap(b.cnf.Clauses) {
+		return fmt.Errorf("too many clauses: expected %d", s)
+	}
+	c := make([]int, len(tmp))
+	copy(c, tmp)
+	b.cnf.Clauses = append(b.cnf.Clauses, c)
+	return nil
+}
+
+func (b *cnfBuilder) Comment(c string) error { return nil } // ignore comments
+
+// Builder defines methods to construct a CNF formula from a DIMACS file.
+type Builder interface {
+	// Problem processes the problem line.
+	Problem(problem string, nVars int, nClauses int) error
+
+	// Clause processes the clause from clause line. Implementations of this
+	// method should consider tmpClause as a shared buffer and only read from it
+	// without retaining it.
+	Clause(tmpClause []int) error
+
+	// Comment processes a comment line. Lines passed to this function always
+	// start with the comment prefix "c". This is useful to process additional
+	// information stored in the comments (e.g. problem information, solver
+	// configuration, etc.).
+	Comment(line string) error
+}
 
 // ReadBuilder reads a DIMACS CNF file from the given reader and populates
 // the given builder. Builder methods are called in the same order as the
 // corresponding lines (e.g. comment, problem, clause) in the DIMACS file.
 func ReadBuilder(r io.Reader, b Builder) error {
 	scanner := bufio.NewScanner(r)
-	foundProblemLine := false
 	clauseBuf := make([]int, 32)
-	nClauses := 0
-	parsedClauses := 0
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -81,32 +107,26 @@ func ReadBuilder(r io.Reader, b Builder) error {
 
 		switch line[0] {
 		case 'c':
-			b.Comment(line)
-		case 'p':
-			if foundProblemLine {
-				return fmt.Errorf("duplicate problem line: %q", line)
+			if err := b.Comment(line); err != nil {
+				return err
 			}
+		case 'p':
 			parts := strings.Fields(line)
-			if len(parts) != 4 || parts[1] != "cnf" {
-				return fmt.Errorf("invalid problem line: %q", line)
+			if len(parts) != 4 {
+				return fmt.Errorf("problem line should have 4 parts, got %d: %s", len(parts), line)
 			}
 			nVars, err := strconv.Atoi(parts[2])
 			if err != nil {
 				return fmt.Errorf("invalid number of variables: %w", err)
 			}
-			nClauses, err = strconv.Atoi(parts[3]) // set nClauses outside the loop
+			nClauses, err := strconv.Atoi(parts[3])
 			if err != nil {
 				return fmt.Errorf("invalid number of clauses: %w", err)
 			}
-			b.Problem(nVars, nClauses)
-			foundProblemLine = true
+			if err := b.Problem(parts[1], nVars, nClauses); err != nil {
+				return err
+			}
 		default:
-			if !foundProblemLine {
-				return fmt.Errorf("clause found before problem line")
-			}
-			if parsedClauses >= nClauses {
-				return fmt.Errorf("too many clauses: expected %d", nClauses)
-			}
 			clauseBuf = clauseBuf[:0]
 			parts := strings.Fields(line)
 			for i, p := range parts {
@@ -122,19 +142,14 @@ func ReadBuilder(r io.Reader, b Builder) error {
 				}
 				clauseBuf = append(clauseBuf, l)
 			}
-			b.Clause(clauseBuf)
-			parsedClauses++
+			if err := b.Clause(clauseBuf); err != nil {
+				return err
+			}
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		return err
-	}
-	if !foundProblemLine {
-		return fmt.Errorf("no problem line found")
-	}
-	if parsedClauses != nClauses {
-		return fmt.Errorf("mismatched clause count: expected %d, got %d", nClauses, parsedClauses)
 	}
 
 	return nil

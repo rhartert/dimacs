@@ -10,6 +10,27 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+const validCNF_noComments = `
+p cnf 3 4 
+1 2 3 0
+1 -2 3 0
+1 -3 0
+-2 -3 0
+`
+
+const validCNF_manyComments = `
+c comment 1
+c comment 2
+p cnf 3 4 
+c comment 3
+1 2 3 0
+1 -2 3 0
+1 -3 0
+c comment 4
+-2 -3 0
+c comment 5
+`
+
 func TestRead(t *testing.T) {
 	testCases := []struct {
 		desc    string
@@ -48,14 +69,26 @@ func TestRead(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			desc:    "invalid variable number",
+			desc:    "invalid variable number (not a number)",
 			reader:  strings.NewReader("p cnf a 3"),
 			wantCNF: CNFFormula{},
 			wantErr: true,
 		},
 		{
-			desc:    "invalid clause number",
+			desc:    "invalid clause number (not a number)",
 			reader:  strings.NewReader("p cnf 3 a"),
+			wantCNF: CNFFormula{},
+			wantErr: true,
+		},
+		{
+			desc:    "invalid variable number (negative)",
+			reader:  strings.NewReader("p cnf -1 3"),
+			wantCNF: CNFFormula{},
+			wantErr: true,
+		},
+		{
+			desc:    "invalid clause number (negative)",
+			reader:  strings.NewReader("p cnf 3 -1"),
 			wantCNF: CNFFormula{},
 			wantErr: true,
 		},
@@ -96,16 +129,22 @@ func TestRead(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			desc: "valid cnf",
-			reader: strings.NewReader(`
-c valid cnf formula
-p cnf 3 4 
-1 2 3 0
-1 -2 3 0
-1 -3 0
--2 -3 0
-c
-`),
+			desc:   "valid cnf (no comments)",
+			reader: strings.NewReader(validCNF_noComments),
+			wantCNF: CNFFormula{
+				NumVars: 3,
+				Clauses: [][]int{
+					{1, 2, 3},
+					{1, -2, 3},
+					{1, -3},
+					{-2, -3},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			desc:   "valid cnf (many comments)",
+			reader: strings.NewReader(validCNF_manyComments),
 			wantCNF: CNFFormula{
 				NumVars: 3,
 				Clauses: [][]int{
@@ -131,6 +170,65 @@ c
 			}
 			if diff := cmp.Diff(tc.wantCNF, gotCNF); diff != "" {
 				t.Errorf("Read(): CNF mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+type testBuilder struct {
+	ProblemErr, ClauseErr, CommentErr error
+}
+
+func (tb *testBuilder) Problem(_ string, _ int, _ int) error { return tb.ProblemErr }
+func (tb *testBuilder) Clause(_ []int) error                 { return tb.ClauseErr }
+func (tb *testBuilder) Comment(_ string) error               { return tb.CommentErr }
+
+func errorEqual(a, b error) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if (a == nil) != (b == nil) {
+		return false
+	}
+	return a.Error() == b.Error()
+}
+
+func TestReadBuilder(t *testing.T) {
+	testCases := []struct {
+		desc    string
+		builder Builder
+		wantErr error
+	}{
+		{
+			desc:    "problem error",
+			builder: &testBuilder{ProblemErr: errors.New("problem error")},
+			wantErr: errors.New("problem error"),
+		},
+		{
+			desc:    "clause error",
+			builder: &testBuilder{ClauseErr: errors.New("clause error")},
+			wantErr: errors.New("clause error"),
+		},
+		{
+			desc:    "comment error",
+			builder: &testBuilder{CommentErr: errors.New("comment error")},
+			wantErr: errors.New("comment error"),
+		},
+		{
+			desc:    "no error",
+			builder: &testBuilder{},
+			wantErr: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			reader := strings.NewReader(validCNF_manyComments)
+
+			gotErr := ReadBuilder(reader, tc.builder)
+
+			if !errorEqual(gotErr, tc.wantErr) {
+				t.Errorf("ReadBuilder(): want error %s, got error %s", tc.wantErr, gotErr)
 			}
 		})
 	}
