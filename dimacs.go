@@ -101,16 +101,16 @@ func ReadBuilder(r io.Reader, b Builder) error {
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
+		if line == "" || line == "%" {
 			continue
 		}
 
 		switch line[0] {
-		case 'c':
+		case 'c': // comment
 			if err := b.Comment(line); err != nil {
 				return err
 			}
-		case 'p':
+		case 'p': // problem
 			parts := strings.Fields(line)
 			if len(parts) != 4 {
 				return fmt.Errorf("problem line should have 4 parts, got %d: %s", len(parts), line)
@@ -126,7 +126,7 @@ func ReadBuilder(r io.Reader, b Builder) error {
 			if err := b.Problem(parts[1], nVars, nClauses); err != nil {
 				return err
 			}
-		default:
+		default: // clause
 			clauseBuf = clauseBuf[:0]
 			parts := strings.Fields(line)
 			for i, p := range parts {
