@@ -1,3 +1,6 @@
+[![Go Reference](https://pkg.go.dev/badge/github.com/rhartert/dimacs.svg)](https://pkg.go.dev/github.com/rhartert/dimacs)
+[![Go Report Card](https://goreportcard.com/badge/github.com/rhartert/dimacs)](https://goreportcard.com/report/github.com/rhartert/dimacs)
+
 # DIMACS CNF Parser
 
 A Go library to parse DIMACS CNF files. This library provides easy-to-use 
