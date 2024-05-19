@@ -21,8 +21,8 @@ type CNFFormula struct {
 	Clauses [][]int
 }
 
-// Read parses a DIMACS CNF file from the given reader and returns a CNFFormula.
-func Read(r io.Reader) (CNFFormula, error) {
+// ReadCNF parses and returns a DIMACS CNF formula from the given reader.
+func ReadCNF(r io.Reader) (CNFFormula, error) {
 	builder := cnfBuilder{}
 	if err := ReadBuilder(r, &builder); err != nil {
 		return CNFFormula{}, err
@@ -92,9 +92,9 @@ type Builder interface {
 	Comment(line string) error
 }
 
-// ReadBuilder reads a DIMACS CNF file from the given reader and populates
+// ReadBuilder reads a DIMACS file from the given reader and populates
 // the given builder. Builder methods are called in the same order as the
-// corresponding lines (e.g. comment, problem, clause) in the DIMACS file.
+// corresponding lines (i.e. comment, problem, clause) in the DIMACS file.
 func ReadBuilder(r io.Reader, b Builder) error {
 	scanner := bufio.NewScanner(r)
 	clauseBuf := make([]int, 32)

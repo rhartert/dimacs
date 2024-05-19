@@ -160,7 +160,7 @@ func TestRead(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotCNF, gotErr := Read(tc.reader)
+			gotCNF, gotErr := ReadCNF(tc.reader)
 
 			if tc.wantErr && gotErr == nil {
 				t.Errorf("Read(): want error, got nil")
