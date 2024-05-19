@@ -101,8 +101,11 @@ func ReadBuilder(r io.Reader, b Builder) error {
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" || line == "%" {
+		if line == "" {
 			continue
+		}
+		if line == "%" { // end of file marker
+			break
 		}
 
 		switch line[0] {

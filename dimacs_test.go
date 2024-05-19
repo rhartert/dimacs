@@ -31,6 +31,17 @@ c comment 4
 c comment 5
 `
 
+const validCNF_endOfFile = `
+p cnf 3 4 
+1 2 3 0
+1 -2 3 0
+1 -3 0
+-2 -3 0
+%
+0
+c comment 
+`
+
 func TestRead(t *testing.T) {
 	testCases := []struct {
 		desc    string
@@ -145,6 +156,20 @@ func TestRead(t *testing.T) {
 		{
 			desc:   "valid cnf (many comments)",
 			reader: strings.NewReader(validCNF_manyComments),
+			wantCNF: CNFFormula{
+				NumVars: 3,
+				Clauses: [][]int{
+					{1, 2, 3},
+					{1, -2, 3},
+					{1, -3},
+					{-2, -3},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			desc:   "valid cnf (early end of file)",
+			reader: strings.NewReader(validCNF_endOfFile),
 			wantCNF: CNFFormula{
 				NumVars: 3,
 				Clauses: [][]int{
