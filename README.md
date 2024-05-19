@@ -142,7 +142,7 @@ type builder struct {
     solver SATSolver
 }
 
-func (b *builder) Problem(nVars int, nClauses int) error {
+func (b *builder) Problem(_ string, nVars int, _ int) error {
     for i := 0; i < nVars; i++ {
         b.solver.AddVariable()
     }
